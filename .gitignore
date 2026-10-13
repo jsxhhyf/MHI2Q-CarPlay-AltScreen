@@ -43,6 +43,9 @@
 !/Toolbox/carplay_alt_screen/mirror_display/build_qnx.sh
 !/Toolbox/carplay_alt_screen/mirror_display/assets/logo_frames.z
 !/Toolbox/carplay_alt_screen/mirror_display/tools/build_startup_logo.py
+!/Toolbox/carplay_alt_screen/mirror_display/tools/build_audi_carplay_logos.py
+!/Toolbox/carplay_alt_screen/mirror_display/tools/patch_startup_logo_slot.py
+!/Toolbox/carplay_alt_screen/mirror_display/assets/carplay_icon_124.png
 
 # RGI production hook, QNX renderer, scene code and shared support.
 !/Tools/build_rgi_qnx.sh
