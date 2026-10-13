@@ -265,7 +265,9 @@ schedule_abnormal_restart() {
 
 # Deliberately do not inherit the CarPlay/dio_manager preload into the sidecar.
 # Direct-display consumes SHM only and does not need any Window58 ID bridge.
-LD_PRELOAD= "$BIN" $MIRROR_ARGS >>"$LOGFILE" 2>&1 &
+# ER P3638: startup intro disabled.  The binary reads ALT111_MIRROR_RESTART_REASON
+# only to skip the embedded intro; this script's own RESTART_REASON is unaffected.
+LD_PRELOAD= ALT111_MIRROR_RESTART_REASON=sidecar_abnormal "$BIN" $MIRROR_ARGS >>"$LOGFILE" 2>&1 &
 PID=$!
 echo "$PID" > "$PIDFILE"
 
