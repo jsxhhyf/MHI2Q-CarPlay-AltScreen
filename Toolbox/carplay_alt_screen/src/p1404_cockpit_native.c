@@ -45,7 +45,7 @@ extern void *p1404_direct_stock_symbol_named(const char *name)
     __attribute__((weak));
 
 #define NATIVE_SLOTS 8u
-#define SCREEN_STREAM_VIDEO_IMPL_OFF 0x38u
+#define SCREEN_STREAM_VIDEO_IMPL_OFF 0x48u /* ER P3638 test build; CN = 0x38 */
 #define OMX_VIDEO_RENDERER_OFF       0x0cu
 #define NATIVE_MIN_POSTS             3u
 #define NATIVE_POST_WINDOW_SECONDS   2u

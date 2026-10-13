@@ -5,7 +5,7 @@ screen "MMI-Cockpit-Carplay" Customization
 
 keyValue
     value   String sys 0x00000000 0
-    label   "Version: V3.7Fix4"
+    label   "Version: V3.7Fix4-ER-P3638-TEST"
     poll    0
 
 keyValue

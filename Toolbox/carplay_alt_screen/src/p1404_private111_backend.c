@@ -32,7 +32,7 @@
 #define SCREEN_SESSION_WAKE_FD_OFF             0x1e8u
 #define SCREEN_SESSION_STREAM_OFF              0x1ecu
 #define RECEIVER_SERVER_OFF                    0x0cu
-#define SERVER_PROCESS_FRAMES_TIMEOUT_OFF      0x1c8u
+#define SERVER_PROCESS_FRAMES_TIMEOUT_OFF      0xc8u /* ER P3638 test build; CN = 0x1c8 */
 #define RECEIVER_AES_SESSION_KEY_OFF           0x1c8u
 #define RECEIVER_CLOCK_OFF                     0x13d0u
 #define RECEIVER_SESSION_UUID_OFF              0x70u
