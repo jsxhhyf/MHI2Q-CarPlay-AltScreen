@@ -5,6 +5,7 @@
  */
 
 #include "rgd_hook.h"
+#include "rgd_identify.h"
 #include <time.h>
 
 DEFINE_LOG_MODULE(RGD);
@@ -441,11 +442,14 @@ static void rgd_update_session_active(void) {
     }
 }
 
-/* Message filter */
+/* Message filter.  IAP2_MSG_IDENTIFY_END (0x1D03) is Apple's
+ * IdentificationRejected; it is listed only to log which parameters the phone
+ * refused, and is never consumed. */
 static uint16_t rgd_msg_filter[] = {
     IAP2_MSG_ROUTE_GUIDANCE_UPDATE,
     IAP2_MSG_ROUTE_GUIDANCE_MANEUVER,
-    IAP2_MSG_ROUTE_GUIDANCE_LANE
+    IAP2_MSG_ROUTE_GUIDANCE_LANE,
+    IAP2_MSG_IDENTIFY_END
 };
 
 /* Module definition.  Route guidance is pure iAP2: it wants Identify, three
@@ -1384,6 +1388,14 @@ static void rgd_mark_first_response(uint16_t msgid) {
 static bool rgd_message_handler(hook_context_t* ctx, const iap2_frame_t* frame) {
     rgd_lazy_init();  /* Ensure bus/session state is ready */
 
+    if (frame->msgid == IAP2_MSG_IDENTIFY_END) {
+        char ids[128];
+        int n = rgd_ident_format_param_ids(ctx->raw_buf, frame->frame_len, ids, sizeof(ids));
+        LOG_WARN(LOG_MODULE, "IdentificationRejected (0x1D03): %d parameter(s) refused [%s] hook_patched=%d",
+                 n, ids, ctx->identify_patched ? 1 : 0);
+        return false;
+    }
+
     if (frame->msgid == IAP2_MSG_ROUTE_GUIDANCE_UPDATE) {
         rgd_log_raw_packet("RGD 0x5201 raw", ctx->raw_buf, frame->frame_len);
 
@@ -1570,10 +1582,50 @@ static uint8_t* rgd_resize_identify_buffer(hook_context_t* ctx, size_t len, size
     return new_buf;
 }
 
-/* Identify patcher */
+/* Log the Identify frame as the firmware built it, in chunks that fit one log
+ * line, so a car session yields the real frame for offline tests. */
+#define RGD_IDENTIFY_DUMP_CHUNK 200u
+static void rgd_log_identify_frame(const uint8_t* buf, size_t len) {
+    for (size_t off = 0; off < len; off += RGD_IDENTIFY_DUMP_CHUNK) {
+        size_t n = len - off > RGD_IDENTIFY_DUMP_CHUNK ? RGD_IDENTIFY_DUMP_CHUNK : len - off;
+        char prefix[48];
+        snprintf(prefix, sizeof(prefix), "Identify raw @%zu/%zu", off, len);
+        log_hexdump(LOG_LEVEL_INFO, LOG_MODULE, prefix, buf + off, n, 0);
+    }
+}
+
+static void rgd_log_identify_lists(const char* when, const uint8_t* buf, size_t len) {
+    char sent[256], recv[256];
+    int ns = rgd_ident_format_ids(buf, len, IDENT_PARAM_MESSAGES_SENT, sent, sizeof(sent));
+    int nr = rgd_ident_format_ids(buf, len, IDENT_PARAM_MESSAGES_RECEIVED, recv, sizeof(recv));
+    LOG_INFO(LOG_MODULE, "Identify %s: len=%zu sent(%d)=[%s] received(%d)=[%s]",
+             when, len, ns, sent, nr, recv);
+}
+
+/* Identify patcher.  Two independent edits, planned on the untouched frame and
+ * applied only once the buffer is known to be large enough:
+ *   1. The 0x001E RouteGuidanceDisplayComponent, as before.
+ *   2. RGI message IDs in parameters 6/7 (rgd_identify.c).  A no-op where
+ *      dio_manager.json already registered them (CN); required on ER P3638. */
 static size_t rgd_identify_patcher(hook_context_t* ctx, uint8_t* buf, size_t len, size_t max_len) {
     rgd_lazy_init();  /* Ensure initialized */
     if (!buf || len < 6) return len;
+
+    rgd_log_identify_frame(buf, len);
+    rgd_log_identify_lists("as built", buf, len);
+
+    int miss_sent = rgd_ident_missing_ids(buf, len, IDENT_PARAM_MESSAGES_SENT,
+                                          rgd_ident_sent_ids, RGD_IDENT_SENT_COUNT);
+    int miss_recv = rgd_ident_missing_ids(buf, len, IDENT_PARAM_MESSAGES_RECEIVED,
+                                          rgd_ident_received_ids, RGD_IDENT_RECEIVED_COUNT);
+    if (miss_sent < 0 || miss_recv < 0) {
+        /* All or nothing: received IDs without 0x5200 in the sent list would
+         * register a stream the HU can never start. */
+        LOG_WARN(LOG_MODULE, "Identify message lists unusable (sent=%d received=%d); RGI ids not added",
+                 miss_sent, miss_recv);
+        miss_sent = miss_recv = 0;
+    }
+    size_t ids_growth = 2u * (size_t)((miss_sent > 0 ? miss_sent : 0) + (miss_recv > 0 ? miss_recv : 0));
 
     uint16_t existing_len = 0;
     size_t existing_off = iap2_find_tlv_offset(buf + 6, len - 6, IDENT_TLV_ROUTE_GUIDANCE_COMPONENT, &existing_len);
@@ -1598,7 +1650,7 @@ static size_t rgd_identify_patcher(hook_context_t* ctx, uint8_t* buf, size_t len
     size_t new_tlv_len = rgd_build_component_tlv(new_tlv, sizeof(new_tlv), g_rgd.component_id);
     if (new_tlv_len == 0) return len;
 
-    size_t new_len = existing_found ? (len - existing_len + new_tlv_len) : (len + new_tlv_len);
+    size_t new_len = (existing_found ? (len - existing_len + new_tlv_len) : (len + new_tlv_len)) + ids_growth;
     if (new_len > max_len) {
         /* Grow the NmeArray storage instead of skipping.  Skipping left RGD disabled: the phone
          * never learns the HU supports route guidance -> count=0, no maneuvers ("RGI не идёт").
@@ -1616,16 +1668,36 @@ static size_t rgd_identify_patcher(hook_context_t* ctx, uint8_t* buf, size_t len
         LOG_INFO(LOG_MODULE, "Identify buffer grown to %zu (need %zu)", new_cap, new_len);
     }
 
+    /* 1. Component, at the offset found in the frame as built. */
     if (existing_found) {
         size_t after_off = existing_off + existing_len;
         size_t after_len = len - after_off;
         if (after_len > 0) memmove(buf + existing_off + new_tlv_len, buf + after_off, after_len);
         memcpy(buf + existing_off, new_tlv, new_tlv_len);
+        new_len = len - existing_len + new_tlv_len;
     } else {
         memcpy(buf + len, new_tlv, new_tlv_len);
+        new_len = len + new_tlv_len;
     }
-
     write_be16(buf + 2, (uint16_t)new_len);
+
+    /* 2. Message IDs.  rgd_ident_add_ids re-validates the frame and finds the
+     *    lists wherever they sit; capacity was ensured above.  A refusal leaves
+     *    the frame untouched. */
+    size_t comp_len = new_len;
+    if (miss_sent > 0) {
+        size_t l = rgd_ident_add_ids(buf, new_len, max_len, IDENT_PARAM_MESSAGES_SENT,
+                                     rgd_ident_sent_ids, RGD_IDENT_SENT_COUNT);
+        if (l) new_len = l;
+    }
+    if (miss_recv > 0) {
+        size_t l = rgd_ident_add_ids(buf, new_len, max_len, IDENT_PARAM_MESSAGES_RECEIVED,
+                                     rgd_ident_received_ids, RGD_IDENT_RECEIVED_COUNT);
+        if (l) new_len = l;
+    }
+    if (new_len != comp_len)
+        LOG_INFO(LOG_MODULE, "Identify RGI message ids added: sent +%d received +%d",
+                 miss_sent > 0 ? miss_sent : 0, miss_recv > 0 ? miss_recv : 0);
     if (ctx && ctx->_priv) {
         *(unsigned int*)((char*)ctx->_priv + 4) = (unsigned int)new_len;
     }
@@ -1635,6 +1707,7 @@ static size_t rgd_identify_patcher(hook_context_t* ctx, uint8_t* buf, size_t len
     ctx->identify_patched = true;
 
     LOG_INFO(LOG_MODULE, "Identify patched: %zu -> %zu bytes", len, new_len);
+    rgd_log_identify_lists("as sent", buf, new_len);
     return new_len;
 }
 

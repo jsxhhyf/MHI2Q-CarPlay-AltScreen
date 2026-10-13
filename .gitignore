@@ -49,6 +49,16 @@
 !/Toolbox/carplay_alt_screen/rgi_native/src/**/*.c
 !/Toolbox/carplay_alt_screen/rgi_native/src/**/*.h
 !/Toolbox/carplay_alt_screen/rgi_native/src/carplay_hook.exports.map
+# SDP-free clang build of rgi_meta: QNX shim headers, static runtime helpers,
+# build, ABI comparison against the SDP reference and helper tests.
+!/Toolbox/carplay_alt_screen/rgi_native/qnxshim/**/*.h
+!/Toolbox/carplay_alt_screen/rgi_native/qnxshim/README.md
+!/Toolbox/carplay_alt_screen/rgi_native/qnxrt/*.c
+!/Tools/build_rgi_meta_clang.sh
+!/Tools/compare_rgi_meta_abi.py
+!/Tools/test_qnxrt_aeabi.sh
+!/Tools/test_rgd_identify.sh
+!/Tools/test_rgi_config.sh
 !/Toolbox/carplay_alt_screen/rgi_renderer/src/**/*.c
 !/Toolbox/carplay_alt_screen/rgi_renderer/src/**/*.h
 !/Toolbox/carplay_alt_screen/rgi_renderer/src/**/*.cpp
@@ -138,3 +148,11 @@
 *.rar
 *.7z
 *.mp4
+
+# er-rgi-dev only: keep the host tests behind the clang rgi_meta build and the
+# ER RGI Identify registration (upstream publishes no tests; drop this block
+# before proposing anything upstream).
+!/Toolbox/carplay_alt_screen/rgi_native/tests/
+!/Toolbox/carplay_alt_screen/rgi_native/tests/test_rgd_identify.c
+!/Toolbox/carplay_alt_screen/rgi_native/tests/test_rgd_patcher.c
+!/Toolbox/carplay_alt_screen/rgi_native/qnxrt/test_aeabi_div.c

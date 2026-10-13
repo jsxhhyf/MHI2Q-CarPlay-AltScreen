@@ -1,6 +1,9 @@
 #!/bin/sh
 # V3.3 RouteGuidance message-array editor for dio_manager.json.
 # Registers Apple's standard 0x5200..0x5204 RGI message transport only.
+# A dio_manager.json with neither array (ER P3638, whose dio_manager has no
+# such keys) is NO_ARRAYS: left untouched, because libcarplay_rgi_meta.so adds
+# the same IDs to the outgoing Identify frame itself.
 set -u
 
 ACTION=${1:-}
@@ -58,7 +61,7 @@ array_stats() {
 }
 
 state_of() {
-  file=$1; present=0; absent=0; bad=0
+  file=$1; present=0; absent=0; bad=0; no_array=0
   for spec in \
     "MessagesSentByAccessory:0x5200" \
     "MessagesSentByAccessory:0x5203" \
@@ -69,6 +72,10 @@ state_of() {
     key=${spec%%:*}; value=${spec#*:}
     set -- $(array_stats "$file" "$key" "$value")
     arrays=${1:-0}; values=${2:-0}
+    if [ "$arrays" -eq 0 ] && [ "$values" -eq 0 ]; then
+      no_array=$((no_array+1))
+      continue
+    fi
     [ "$arrays" -eq 1 ] || bad=1
     case "$values" in
       0) absent=$((absent+1)) ;;
@@ -76,7 +83,8 @@ state_of() {
       *) bad=1 ;;
     esac
   done
-  if [ "$bad" -ne 0 ]; then echo INVALID
+  if [ "$no_array" -eq 5 ]; then echo NO_ARRAYS
+  elif [ "$no_array" -ne 0 ] || [ "$bad" -ne 0 ]; then echo INVALID
   elif [ "$present" -eq 5 ]; then echo COMPLETE
   elif [ "$absent" -eq 5 ]; then echo ABSENT
   else echo MIXED
@@ -87,10 +95,11 @@ verify_complete() { [ "$(state_of "$1")" = COMPLETE ]; }
 
 if [ "$ACTION" = verify ]; then
   state=$(state_of "$FILE")
-  [ "$state" = COMPLETE ] && {
-    echo "V33_RGI_CONFIG=PASS state=COMPLETE"
+  case "$state" in COMPLETE|NO_ARRAYS)
+    echo "V33_RGI_CONFIG=PASS state=$state"
     exit 0
-  }
+    ;;
+  esac
   echo "V33_RGI_CONFIG=FAIL state=$state" >&2
   exit 1
 fi
@@ -99,6 +108,10 @@ state=$(state_of "$FILE")
 case "$state" in
   COMPLETE)
     echo "V33_RGI_CONFIG=UNCHANGED state=COMPLETE"
+    exit 0
+    ;;
+  NO_ARRAYS)
+    echo "V33_RGI_CONFIG=UNCHANGED state=NO_ARRAYS registration=identify_hook"
     exit 0
     ;;
   ABSENT) ;;

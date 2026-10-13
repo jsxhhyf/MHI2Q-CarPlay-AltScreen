@@ -437,6 +437,26 @@ static bool module_wants_message(hook_module_t* mod, uint16_t msgid) {
     return false;
 }
 
+/* True only for an explicit msg_filter entry; a module without a filter does
+ * not opt into frames stock Decode refused. */
+static bool any_module_lists_message(uint16_t msgid) {
+    for (int i = 0; i < g_fw.module_count; i++) {
+        hook_module_t* mod = &g_fw.modules[i];
+        if (!mod->active || !mod->def.on_message || !mod->def.msg_filter) continue;
+        for (size_t j = 0; j < mod->def.msg_filter_count; j++)
+            if (mod->def.msg_filter[j] == msgid) return true;
+    }
+    return false;
+}
+
+static void log_decode_fallback(uint16_t msgid, int rc) {
+    static unsigned int count;
+    unsigned int n = __sync_add_and_fetch(&count, 1u);
+    if (n <= 5 || n % 500 == 0)
+        LOG_WARN(LOG_MODULE, "Stock Decode rc=%d for listed msg 0x%04X; dispatching raw frame to modules (count=%u)",
+                 rc, msgid, n);
+}
+
 static bool dispatch_message(const iap2_frame_t* frame) {
     bool consumed = false;
     for (int i = 0; i < g_fw.module_count && !consumed; i++) {
@@ -895,13 +915,25 @@ HOOK_EXPORT int _ZN14NmeIAP2Message6DecodeEPKhi(void* self, const uint8_t* buf, 
     int ret = 0;
     if (g_fw.real_decode) ret = g_fw.real_decode(self, buf, len);
 
-    if (ret != 0 || !buf || len < 6) return ret;
+    if (!buf || len < 6) return ret;
     if (buf[0] != 0x40 || buf[1] != 0x40) return ret;
 
     uint16_t frame_len = read_be16(buf + 2);
     if (frame_len < 6 || frame_len > (uint16_t)len) return ret;
 
     uint16_t msgid = read_be16(buf + 4);
+
+    /* A frame stock Decode refused is normally none of our business.  The
+     * exception is a message a module explicitly listed: a dio_manager that
+     * cannot register it (ER P3638 has no RGI message arrays) may refuse it in
+     * Cinemo although the phone sent it because the hook declared it in
+     * Identify.  Modules parse the raw bytes, never Cinemo's decoded object, so
+     * they still get the frame; stock keeps its rc and its state handling. */
+    bool stock_refused = (ret != 0);
+    if (stock_refused) {
+        if (!any_module_lists_message(msgid)) return ret;
+        log_decode_fallback(msgid, ret);
+    }
 
     g_fw.ctx.direction = MSG_DIR_INCOMING;
     g_fw.ctx.raw_buf = buf;
@@ -912,7 +944,7 @@ HOOK_EXPORT int _ZN14NmeIAP2Message6DecodeEPKhi(void* self, const uint8_t* buf, 
         log_unknown_52xx_msg(buf, dump_len, msgid, MSG_DIR_INCOMING);
     }
 
-    handle_state_messages(msgid);
+    if (!stock_refused) handle_state_messages(msgid);
 
     iap2_frame_t frame = {
         .offset = 0,
