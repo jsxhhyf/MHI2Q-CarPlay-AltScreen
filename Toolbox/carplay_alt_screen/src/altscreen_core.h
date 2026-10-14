@@ -15,9 +15,13 @@
  * These flags only ask the phone/navigation app to include the corresponding
  * elements in the type111 navigation video; they do not alter the private111
  * transport, decoder, SHM ABI, renderer geometry, Context80, or wheel control.
+ *
+ * ER build: request the base cluster context instead of /map.  iOS 27 serves
+ * /map as a map-only surface; the base context is the map plus Maps' own
+ * turn card (iOS item types: map=1, instruction card=2, base/any content=3).
  */
 #define CP_ALT_CLUSTER_MAP_URL \
-    "maps:/car/instrumentcluster/map?showSpeedLimit=user&showCompass=user&showETA=no&maneuverLayout="
+    "maps:/car/instrumentcluster?showSpeedLimit=user&showCompass=user&showETA=no&maneuverLayout="
 
 struct altscreen_display {
     const char *uuid;
