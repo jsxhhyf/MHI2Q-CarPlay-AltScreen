@@ -21,7 +21,7 @@ STUBS="$OUT/stubs"
 TARGET=armv7-linux-gnueabi
 
 # Same source list and language flags as Tools/build_rgi_qnx.sh (SDP build).
-SRCS="framework/logging.c framework/state_trace.c framework/signal_guard.c framework/bus.c framework/iap2_protocol.c framework/hook_framework.c routeguidance/rgd_tlv.c routeguidance/rgd_identify.c routeguidance/rgd_hook.c coverart/jpeg_safety.c coverart/coverart_stream.c coverart/coverart_hook.c main.c"
+SRCS="framework/logging.c framework/state_trace.c framework/signal_guard.c framework/bus.c framework/iap2_protocol.c framework/hook_framework.c routeguidance/rgd_tlv.c routeguidance/rgd_identify.c routeguidance/rgd_hook.c coverart/jpeg_safety.c coverart/coverart_stream.c coverart/coverart_hook.c oemmap/oem_map_gate.c main.c"
 CF="--target=$TARGET -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=softfp -marm"
 CF="$CF -fPIC -O2 -std=gnu99 -D__QNX__ -fvisibility=hidden -fdata-sections -ffunction-sections"
 CF="$CF -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables"
